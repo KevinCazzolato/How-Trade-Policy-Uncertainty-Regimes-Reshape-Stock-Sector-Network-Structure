@@ -1,0 +1,6 @@
+═══ TVTP-HMM DIAGNOSTICS ═══
+Observations: 2007
+Non-High: μ=5.7355 σ=0.6970
+High-TPU: μ=7.0842 σ=0.4969
+α01=-7.5322 β01=1.9852 | α10=-6.0305 β10=0.6502
+LR Stat=11.004 p=4.0785e-03 (REJECT H0 → VIX drives transitions)
