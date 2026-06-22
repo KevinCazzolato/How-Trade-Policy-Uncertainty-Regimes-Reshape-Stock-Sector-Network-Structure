@@ -15,8 +15,6 @@ class DataPipeline:
     def __init__(self, start_date="2018-01-01", end_date="2026-06-18"):
         self.start = start_date
         self.end = end_date
-
-        # Gestione Path Relativi Universali (Trova la radice del progetto)
         self.base_dir = Path(__file__).resolve().parents[1]
         self.data_dir = self.base_dir / "data"
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -87,7 +85,6 @@ class DataPipeline:
         )
 
         tpu_raw = tpu_raw.loc[self.start : self.end]
-        # Gestione Zeros Economici (BBD Index diagnostics)
         tpu_raw["tpu"] = tpu_raw["tpu"].replace(0, float("nan")).ffill()
         return tpu_raw
 
@@ -130,7 +127,7 @@ class DataPipeline:
             log_returns, macro_raw, tpu_raw, realized_vol
         )
 
-        # 3. Save Outputs (in modo relativo alla repo)
+        # 3. Save Outputs
         log_returns.to_csv(self.data_dir / "log_returns.csv")
         log_prices.to_csv(self.data_dir / "log_prices.csv")
         realized_vol.to_csv(self.data_dir / "realized_vol.csv")
@@ -141,6 +138,5 @@ class DataPipeline:
 
 
 if __name__ == "__main__":
-    # Test esecuzione diretta dello script
     pipeline = DataPipeline()
     pipeline.run_pipeline()
