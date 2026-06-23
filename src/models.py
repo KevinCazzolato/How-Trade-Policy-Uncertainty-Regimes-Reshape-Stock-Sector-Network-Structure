@@ -677,6 +677,231 @@ class HMM_TVTP:
         self._plot_results()
 
 
+class ClusteringBenchmark:
+    """
+    Phase 2 — non-temporal clustering benchmarks (K-Means, Hierarchical) against
+    the HMM regime structure, plus a chi-square event-window validation against
+    the 2025 tariff timeline.
+    """
+
+    def __init__(self):
+        try:
+            self.base_dir = Path(__file__).resolve().parents[1]
+        except NameError:
+            self.base_dir = Path.cwd()
+        self.data_dir = self.base_dir / "data"
+        self.out_dir = self.data_dir / "phase_2"
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+
+    def load_and_prepare_data(self):
+        master = pd.read_csv(
+            self.data_dir / "master_dataset.csv", index_col=0, parse_dates=True
+        )
+        regime_df = pd.read_csv(
+            self.data_dir / "regime_labels.csv", index_col=0, parse_dates=True
+        )
+
+        master["log_tpu"] = np.log(master["tpu"])
+        master_hmm = master[["log_tpu", "vix"]].dropna()
+
+        common_idx = master_hmm.index.intersection(regime_df.index)
+        master_hmm, regime_df = (
+            master_hmm.loc[common_idx],
+            regime_df.loc[common_idx],
+        )
+
+        self.master = master
+        self.master_hmm = master_hmm
+        self.regime_df = regime_df
+        return master_hmm, regime_df
+
+    def fit_clustering_benchmarks(self):
+        print(f"\n{'═'*60}\nNON-TEMPORAL CLUSTERING BENCHMARKS\n{'═'*60}")
+
+        X_scaled = StandardScaler().fit_transform(
+            self.master_hmm[["log_tpu", "vix"]].values
+        )
+        best_k = len(self.regime_df["regime_label"].unique())
+        hmm_labels = self.regime_df["regime_label"].values
+
+        kmeans_labels = KMeans(
+            n_clusters=best_k, random_state=42, n_init=10
+        ).fit_predict(X_scaled)
+        hc_labels = AgglomerativeClustering(
+            n_clusters=best_k, linkage="ward"
+        ).fit_predict(X_scaled)
+
+        print(
+            f"Silhouette Scores:\n"
+            f"  K-Means (k={best_k}): {silhouette_score(X_scaled, kmeans_labels):.3f}"
+        )
+        print(
+            f"  Hierarchical (k={best_k}): {silhouette_score(X_scaled, hc_labels):.3f}"
+        )
+
+        print(f"\nAgreement with HMM Regimes (ARI | NMI):")
+        ari_km = adjusted_rand_score(hmm_labels, kmeans_labels)
+        nmi_km = normalized_mutual_info_score(hmm_labels, kmeans_labels)
+        ari_hc = adjusted_rand_score(hmm_labels, hc_labels)
+        nmi_hc = normalized_mutual_info_score(hmm_labels, hc_labels)
+        print(f"  K-Means:      {ari_km:.3f} | {nmi_km:.3f}")
+        print(f"  Hierarchical: {ari_hc:.3f} | {nmi_hc:.3f}")
+
+        if ari_km < 0.6:
+            print(
+                "\n→ ECONOMETRIC INSIGHT: L'ARI basso dimostra che la dipendenza "
+                "Markoviana dell'HMM conta."
+            )
+
+        self.best_k = best_k
+        self.kmeans_labels = kmeans_labels
+        self.hc_labels = hc_labels
+        self.cluster_scores = {
+            "silhouette_kmeans": silhouette_score(X_scaled, kmeans_labels),
+            "silhouette_hc": silhouette_score(X_scaled, hc_labels),
+            "ari_kmeans": ari_km,
+            "nmi_kmeans": nmi_km,
+            "ari_hc": ari_hc,
+            "nmi_hc": nmi_hc,
+        }
+        return kmeans_labels, hc_labels
+
+    def validate_tariff_events(self):
+        print(f"\n{'═'*60}\nEMPIRICAL EVENT VALIDATION (2025 TARIFFS)\n{'═'*60}")
+
+        regime_df = self.regime_df
+        masks = [
+            (regime_df.index >= pd.Timestamp(d) - pd.Timedelta(days=2))
+            & (regime_df.index <= pd.Timestamp(d) + pd.Timedelta(days=10))
+            for d, _ in HMM_TVTP.TARIFF_EVENTS
+        ]
+        regime_df["is_event_window"] = np.logical_or.reduce(masks)
+        regime_df["is_high_tpu"] = regime_df["regime_label"] == "High-TPU"
+
+        contingency_table = pd.crosstab(
+            regime_df["is_event_window"], regime_df["is_high_tpu"]
+        )
+        chi2_stat, p_val, _, _ = chi2_contingency(contingency_table)
+
+        print("Contingency Table:\n", contingency_table)
+        print(f"\nPearson Chi-Square: Chi2 = {chi2_stat:.2f} | P-value = {p_val:.4e}")
+        conclusion = (
+            "REJECT H0: Validazione confermata ✓"
+            if p_val < 0.05
+            else "FAIL TO REJECT H0: Nessuna coincidenza sistematica."
+        )
+        print(f"\n→ {conclusion}")
+
+        self.chi2_stat, self.chi2_pval = chi2_stat, p_val
+        return chi2_stat, p_val
+
+    def _plot_results(self):
+        print("\nGenerazione del grafico di confronto a 3 pannelli...")
+
+        master_hmm = self.master_hmm.copy()
+        master_hmm["kmeans_cluster"] = self.kmeans_labels
+        master_hmm["hc_cluster"] = self.hc_labels
+
+        plot_df = self.master.loc[master_hmm.index].copy()
+        plot_df["high_hmm"] = self.regime_df["regime_label"] == "High-TPU"
+        plot_df["high_kmeans"] = (
+            master_hmm["kmeans_cluster"]
+            == master_hmm.groupby("kmeans_cluster")["log_tpu"].mean().idxmax()
+        )
+        plot_df["high_hc"] = (
+            master_hmm["hc_cluster"]
+            == master_hmm.groupby("hc_cluster")["log_tpu"].mean().idxmax()
+        )
+
+        panels = [
+            {
+                "col": "high_hmm",
+                "color": "#E24B4A",
+                "title": "A — Markov Switching HMM (Includes Time-Dependency)",
+                "lbl": "HMM High-TPU Regime",
+            },
+            {
+                "col": "high_kmeans",
+                "color": "#8E44AD",
+                "title": f"B — K-Means Static Clustering Benchmark (k={self.best_k})",
+                "lbl": "K-Means High Cluster",
+            },
+            {
+                "col": "high_hc",
+                "color": "#E67E22",
+                "title": f"C — Agglomerative Hierarchical Benchmark (Ward, k={self.best_k})",
+                "lbl": "Hierarchical High Cluster",
+            },
+        ]
+
+        fig, axes = plt.subplots(3, 1, figsize=(14, 13), sharex=True)
+        fig.suptitle(
+            "Regime Identification: Markovian HMM vs. Non-Temporal Clustering Benchmarks",
+            fontsize=14,
+            fontweight="bold",
+            y=0.96,
+        )
+
+        for ax, p in zip(axes, panels):
+            ax.plot(
+                plot_df.index, plot_df["tpu"], color="#444", lw=0.8, label="TPU Index"
+            )
+            ax.fill_between(
+                plot_df.index,
+                0,
+                plot_df["tpu"].max(),
+                where=plot_df[p["col"]],
+                alpha=0.22,
+                color=p["color"],
+                label=p["lbl"],
+            )
+            ax.set(yscale="log", title=p["title"])
+            ax.legend(loc="upper left", fontsize=9)
+            ax.grid(alpha=0.2, ls="--")
+
+            for date_str, label in HMM_TVTP.TARIFF_EVENTS:
+                ev_date = pd.Timestamp(date_str)
+                if plot_df.index[0] <= ev_date <= plot_df.index[-1]:
+                    ax.axvline(ev_date, color="#378ADD", lw=1.0, ls=":", alpha=0.8)
+
+        for date_str, label in HMM_TVTP.TARIFF_EVENTS:
+            ev_date = pd.Timestamp(date_str)
+            if plot_df.index[0] <= ev_date <= plot_df.index[-1]:
+                axes[0].text(
+                    ev_date,
+                    plot_df["tpu"].max() * 0.4,
+                    label,
+                    fontsize=7,
+                    color="#378ADD",
+                    rotation=90,
+                    va="top",
+                    ha="right",
+                    bbox=dict(
+                        boxstyle="round,pad=0.2",
+                        fc="white",
+                        ec="#378ADD",
+                        alpha=0.8,
+                        lw=0.5,
+                    ),
+                )
+
+        axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+        axes[2].xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        fig.autofmt_xdate()
+        plt.tight_layout()
+
+        output_path = self.out_dir / "hmm_vs_all_benchmarks.png"
+        plt.savefig(output_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Grafico salvato in: {output_path}")
+
+    def run_analysis(self):
+        self.load_and_prepare_data()
+        self.fit_clustering_benchmarks()
+        self.validate_tariff_events()
+        self._plot_results()
+
+
 if __name__ == "__main__":
     try:
         hmm = HMMRegimeAnalysis()
@@ -689,3 +914,9 @@ if __name__ == "__main__":
         tvtp.run_analysis()
     except Exception as e:
         print(f"error TVTP: {e}")
+
+    try:
+        bench = ClusteringBenchmark()
+        bench.run_analysis()
+    except Exception as e:
+        print(f"error ClusteringBenchmark: {e}")
