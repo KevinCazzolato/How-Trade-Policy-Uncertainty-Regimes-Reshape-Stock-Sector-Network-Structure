@@ -1,0 +1,14 @@
+numpy
+pandas
+matplotlib
+seaborn
+networkx
+statsmodels
+scipy
+scikit-learn
+hmmlearn
+yfinance
+pandas-datareader
+dowhy
+tensorflow
+ipython
