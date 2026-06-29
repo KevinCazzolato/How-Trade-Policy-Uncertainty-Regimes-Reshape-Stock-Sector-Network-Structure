@@ -1,9 +1,14 @@
 numpy
 pandas
 matplotlib
-scikit-learn
-scipy
+seaborn
+networkx
 statsmodels
+scipy
+scikit-learn
 hmmlearn
 yfinance
 pandas-datareader
+dowhy
+tensorflow
+ipython
