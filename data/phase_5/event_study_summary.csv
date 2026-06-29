@@ -1,0 +1,4 @@
+event,post_regime,density_pre,density_post,avg|r|_pre,avg|r|_post,frobenius,perm_p,sim_to_High,sim_to_Low,top_centrality_gainers
+Feb 1 2025: CA/MX/CN tariffs announced,High-TPU,0.164,0.145,0.503,0.463,1.302,0.8761,0.776,0.676,"XLY, XLK, XLC"
+Mar 4 2025: tariffs take effect,High-TPU,0.055,0.836,0.355,0.805,4.0,0.003,0.73,0.667,"XLF, XLE, XLK"
+Apr 2 2025: Liberation Day,High-TPU,0.218,0.8,0.479,0.811,2.717,0.0805,0.702,0.564,"XLRE, XLE, XLU"
